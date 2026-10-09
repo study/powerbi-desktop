@@ -1,1 +1,1054 @@
-
+Subject: [PATCH] some changes
+---
+Index: Builder/vite.config.common.utils.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Builder/vite.config.common.utils.ts b/Builder/vite.config.common.utils.ts
+--- a/Builder/vite.config.common.utils.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Builder/vite.config.common.utils.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -128,6 +128,8 @@
+       return "vendor-numbro-bundle";
+     } else if (id.includes("ag-grid")) {
+       return "vendor-ag-grid-wrapper-bundle";
++    } else if (id.includes("powerbi") || id.includes("post-message")) {
++      return "vendor-powerbi-bundle";
+     }
+     return "vendor-bundle";
+   }
+Index: Components/Basic/DataGrid/DataGrid.css
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/DataGrid.css b/Components/Basic/DataGrid/DataGrid.css
+--- a/Components/Basic/DataGrid/DataGrid.css	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Components/Basic/DataGrid/DataGrid.css	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -73,4 +73,21 @@
+             padding-left: calc(var(--ag-spacing)* 1.5 + 12px);
+         }
+     }
+-}
+\ No newline at end of file
++}
++.Advantage-DataGrid-PowerBI-Container {
++    width: 100%;
++    height: 100%;
++}
++
++.Advantage-DataGrid-PowerBI-Container iframe {
++    border: none;
++}
++
++.Advantage-DataGrid-PowerBI-Loader {
++    position: absolute;
++    inset: 0;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    pointer-events: none;
++}
+Index: Components/Basic/DataGrid/DataGrid.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/DataGrid.tsx b/Components/Basic/DataGrid/DataGrid.tsx
+--- a/Components/Basic/DataGrid/DataGrid.tsx	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Components/Basic/DataGrid/DataGrid.tsx	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -22,6 +22,10 @@
+ import { IExportEnabledDataGridProps, IExportDisabledDataGridProps } from "./DataGridInterfaces";
+ import { DataGridRegistration } from "./DataGridRegistration";
+ import { DataGridUtils } from "./DataGridUtils";
++import { DataGridPowerBI } from "./DataGridPowerBI";
++import { PowerBIReportOverlay } from "./PowerBIReportOverlay";
++import { Application } from "Core/Application";
++import type { IPowerBIQuickReportRequest } from "Core/Data/PowerBI/PowerBITypes";
+ 
+ DataGridRegistration.setLicenseAndRegisterAllModules();
+ 
+@@ -31,6 +35,7 @@
+ };
+ interface IDataGridState<TData> {
+     defaultColDef: ColDef;
++    powerBIRequest: IPowerBIQuickReportRequest | null;
+ }
+ 
+ export class DataGrid<TData = any> extends React.Component<IDataGridProps<TData>, IDataGridState<TData>> {
+@@ -57,7 +62,8 @@
+             defaultColDef: {
+                 ...DefaultColDef,
+                 ...props.defaultColDef
+-            }
++            },
++            powerBIRequest: null
+         }
+         this.SetDataGridExports(props);
+         this.dataGridApi = null
+@@ -90,6 +96,24 @@
+         })
+     };
+ 
++    private IsPowerBIExportEnabled = (): boolean => {
++        return Boolean(this.props.enableExport
++            && this.props.enablePowerBIExport
++            && Application.Instance.DataFacade?.PowerBI?.IsEnabled);
++    };
++
++    private ExportGridDataToPowerBI = () => {
++        if (!this.props.enableExport || !this.dataGridApi) return;
++        const reportName = this.props.powerBIReportName || this.props.exportAuditProperties?.Component || "Grid data";
++        this.dataGridExports.LogAndExport(AllowedExportTypes.PowerBI, () => {
++            this.setState({ powerBIRequest: DataGridPowerBI.createQuickReportRequest(this.dataGridApi, reportName) });
++        });
++    };
++
++    private ClosePowerBIReport = () => {
++        this.setState({ powerBIRequest: null });
++    };
++
+     private OverrideExportApi = (api: GridApi<TData>) => {
+         if (api.exportDataAsCsv !== this.ExportGridDataAsCsv) {
+             this.nativeExportDataAsCsv = api.exportDataAsCsv?.bind(api);
+@@ -135,7 +159,8 @@
+             defaultItems,
+             enableExport,
+             !suppressCsvExport ? this.ExportGridDataAsCsv : undefined,
+-            !suppressExcelExport ? this.ExportGridDataAsExcel : undefined
++            !suppressExcelExport ? this.ExportGridDataAsExcel : undefined,
++            this.IsPowerBIExportEnabled() ? this.ExportGridDataToPowerBI : undefined
+         );
+         if (getContextMenuItems) {
+             const customMenu = await getContextMenuItems({ defaultItems: menuItems, ...restParams }) ?? [];
+@@ -206,6 +231,8 @@
+         } = this.props;
+         if (enableExport) {
+             delete restProps["exportAuditProperties"]
++            delete restProps["enablePowerBIExport"]
++            delete restProps["powerBIReportName"]
+         }
+         
+         return (
+@@ -225,6 +252,9 @@
+                     suppressColumnVirtualisation={isTestMode}
+                     suppressRowVirtualisation={isTestMode}
+                 />
++                {this.state.powerBIRequest && (
++                    <PowerBIReportOverlay request={this.state.powerBIRequest} onClose={this.ClosePowerBIReport} />
++                )}
+             </div>
+         )
+     }
+Index: Components/Basic/DataGrid/DataGridConstants.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/DataGridConstants.ts b/Components/Basic/DataGrid/DataGridConstants.ts
+--- a/Components/Basic/DataGrid/DataGridConstants.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Components/Basic/DataGrid/DataGridConstants.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -20,7 +20,8 @@
+ export const AllowedExportTypes = {
+     Excel: "Excel",
+     MultiExcel: "MultiExcel",
+-    Csv: "Csv"
++    Csv: "Csv",
++    PowerBI: "PowerBI"
+ } as const;
+ 
+ export const CustomDefaultContextMenuItems = ["cut", "copy", "copyWithHeaders", "copyWithGroupHeaders", "export"];
+Index: Components/Basic/DataGrid/DataGridInterfaces.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/DataGridInterfaces.ts b/Components/Basic/DataGrid/DataGridInterfaces.ts
+--- a/Components/Basic/DataGrid/DataGridInterfaces.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Components/Basic/DataGrid/DataGridInterfaces.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -23,6 +23,15 @@
+     enableExport: true;
+     addressName?: string;
+     exportAuditProperties: IExportAuditProperties;
++    /**
++     * Adds "Power BI" to Export menu, which opens displayed grid data in auto-generated Power BI report.
++     * Requires "PowerBI" scopes in application settings.
++     */
++    enablePowerBIExport?: boolean;
++    /**
++     * Name of the Power BI semantic model and report, defaults to exportAuditProperties.Component
++     */
++    powerBIReportName?: string;
+ };
+ 
+ export interface IExportDisabledDataGridProps<TData> extends AgGridReactProps<TData> {
+Index: Components/Basic/DataGrid/DataGridPowerBI.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/DataGridPowerBI.ts b/Components/Basic/DataGrid/DataGridPowerBI.ts
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Components/Basic/DataGrid/DataGridPowerBI.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,93 @@
++import type { Column, GridApi, IRowNode } from "ag-grid-community";
++import type { IPowerBIColumn, IPowerBIQuickReportRequest, PowerBIDataType } from "Core/Data/PowerBI/PowerBITypes";
++
++const AutoColumnPrefix = "ag-Grid-AutoColumn";
++
++const CellDataTypeMapping: Record<string, PowerBIDataType> = {
++    number: "Number",
++    boolean: "Logical",
++    date: "DateTime",
++    dateString: "DateTime",
++    dateTime: "DateTime",
++    dateTimeString: "DateTime",
++    text: "Text"
++};
++
++const IsDate = (value: unknown): value is Date => value instanceof Date && !isNaN(value.getTime());
++
++const InferDataType = (values: unknown[]): PowerBIDataType => {
++    const value = values.find(item => item !== null && item !== undefined && item !== "");
++    if (typeof value === "number") return "Number";
++    if (typeof value === "boolean") return "Logical";
++    if (IsDate(value)) return "DateTime";
++    return "Text";
++};
++
++// Values are parsed by Power BI using M language value specification
++const FormatValue = (value: unknown, formattedValue: string | null, dataType: PowerBIDataType): string => {
++    if (value === null || value === undefined) return "";
++    switch (dataType) {
++        case "Number":
++            return typeof value === "number" && isFinite(value) ? String(value) : "";
++        case "Logical":
++            return typeof value === "boolean" ? String(value) : "";
++        case "DateTime":
++            if (IsDate(value)) return value.toISOString();
++            return typeof value === "string" ? value : "";
++        default:
++            if (typeof value === "object") return formattedValue ?? JSON.stringify(value);
++            return String(value);
++    }
++};
++
++const GetUniqueName = (name: string, usedNames: Set<string>): string => {
++    let uniqueName = name || "Column";
++    let index = 2;
++    while (usedNames.has(uniqueName)) {
++        uniqueName = `${name} (${index++})`;
++    }
++    usedNames.add(uniqueName);
++    return uniqueName;
++};
++
++export const DataGridPowerBI = {
++    /**
++     * Build Power BI quick report request from displayed columns and filtered & sorted leaf rows
++     */
++    createQuickReportRequest: <TData>(api: GridApi<TData>, modelName: string): IPowerBIQuickReportRequest => {
++        const columns: Column[] = (api.getAllDisplayedColumns() ?? [])
++            .filter(column => !column.getColId().startsWith(AutoColumnPrefix));
++
++        const rowNodes: IRowNode<TData>[] = [];
++        api.forEachNodeAfterFilterAndSort(rowNode => {
++            if (!rowNode.group) rowNodes.push(rowNode);
++        });
++
++        const rawValues = rowNodes.map(rowNode =>
++            columns.map(column => api.getCellValue({ rowNode, colKey: column }))
++        );
++
++        const usedNames = new Set<string>();
++        const powerBIColumns: IPowerBIColumn[] = columns.map((column, columnIndex) => {
++            const cellDataType = column.getColDef().cellDataType;
++            const dataType = (typeof cellDataType === "string" && CellDataTypeMapping[cellDataType])
++                || InferDataType(rawValues.map(row => row[columnIndex]));
++            return {
++                name: GetUniqueName(api.getDisplayNameForColumn(column, null), usedNames),
++                dataType
++            };
++        });
++
++        const rows = rowNodes.map((rowNode, rowIndex) =>
++            columns.map((column, columnIndex) => {
++                const value = rawValues[rowIndex][columnIndex];
++                const formattedValue = typeof value === "object" && value !== null && !IsDate(value)
++                    ? api.getCellValue({ rowNode, colKey: column, useFormatter: true })
++                    : null;
++                return FormatValue(value, formattedValue, powerBIColumns[columnIndex].dataType);
++            })
++        );
++
++        return { modelName, columns: powerBIColumns, rows };
++    }
++};
+Index: Components/Basic/DataGrid/DataGridUtils.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/DataGridUtils.ts b/Components/Basic/DataGrid/DataGridUtils.ts
+--- a/Components/Basic/DataGrid/DataGridUtils.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Components/Basic/DataGrid/DataGridUtils.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -3,7 +3,7 @@
+ import { TDataGridContexMenuItemCollection } from "./DataGridTypes";
+ 
+ export const DataGridUtils = {
+-    setDefaultMenuItems: (defaultItems: DefaultMenuItem[], allowExport: boolean, csvExport: Function, excelExport: Function) => {
++    setDefaultMenuItems: (defaultItems: DefaultMenuItem[], allowExport: boolean, csvExport: Function, excelExport: Function, powerBIExport?: Function) => {
+         const filteredDefaultContextMenuItems = defaultItems?.filter((item) => !CustomDefaultContextMenuItems.includes(item)) ?? [];
+         let customContextMenuItems: TDataGridContexMenuItemCollection = [
+             {
+@@ -12,7 +12,7 @@
+             },
+             ...filteredDefaultContextMenuItems
+         ];
+-        if (allowExport && (csvExport || excelExport)) {
++        if (allowExport && (csvExport || excelExport || powerBIExport)) {
+             const exportSubMenu = [];
+             if (csvExport) {
+                 exportSubMenu.push({
+@@ -26,6 +26,12 @@
+                     action: excelExport
+                 });
+             }
++            if (powerBIExport) {
++                exportSubMenu.push({
++                    name: 'Power BI',
++                    action: powerBIExport
++                });
++            }
+             customContextMenuItems = [
+                 ...customContextMenuItems, {
+                     name: "Export",
+Index: Components/Basic/DataGrid/PowerBIReportOverlay.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/PowerBIReportOverlay.tsx b/Components/Basic/DataGrid/PowerBIReportOverlay.tsx
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Components/Basic/DataGrid/PowerBIReportOverlay.tsx	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,55 @@
++import React, { useEffect, useRef, useState } from "react";
++import { Application } from "Core/Application";
++import type { IPowerBIQuickReportRequest } from "Core/Data/PowerBI/PowerBITypes";
++import { Overlay } from "../Overlay";
++import { Loader, LoaderSize } from "../Loader";
++
++export interface IPowerBIReportOverlayProps {
++    request: IPowerBIQuickReportRequest;
++    onClose: () => void;
++}
++
++export const PowerBIReportOverlay: React.FC<IPowerBIReportOverlayProps> = ({ request, onClose }) => {
++    const containerRef = useRef<HTMLDivElement>(null);
++    const [isLoading, setIsLoading] = useState<boolean>(true);
++
++    useEffect(() => {
++        const container = containerRef.current;
++        const powerBI = Application.Instance.DataFacade.PowerBI;
++        let isActive = true;
++
++        powerBI.QuickCreateReport(container, request)
++            .then(report => report.on("loaded", () => isActive && setIsLoading(false)))
++            .catch(() => {
++                if (!isActive) return;
++                Application.Instance.Communication.Alert("Failed to open data in Power BI.");
++                onClose();
++            });
++
++        return () => {
++            isActive = false;
++            powerBI.ResetContainer(container);
++        };
++    }, [request]);
++
++    return (
++        <Overlay
++            visible
++            title={request.modelName}
++            width="90vw"
++            centered
++            destroyOnClose
++            maskClosable={false}
++            footer={null}
++            onCancel={onClose}
++            bodyStyle={{ height: "80vh", padding: 0, position: "relative" }}
++        >
++            {isLoading && (
++                <div className="Advantage-DataGrid-PowerBI-Loader">
++                    <Loader size={LoaderSize.M} />
++                </div>
++            )}
++            <div ref={containerRef} className="Advantage-DataGrid-PowerBI-Container" />
++        </Overlay>
++    );
++};
+Index: Components/Basic/DataGrid/index.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Components/Basic/DataGrid/index.ts b/Components/Basic/DataGrid/index.ts
+--- a/Components/Basic/DataGrid/index.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Components/Basic/DataGrid/index.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -3,4 +3,6 @@
+ export * from "./DataGridExports";
+ export * from "./DataGridInterfaces";
+ export * from "./DataGridTypes";
+-export * from "./DataGridUtils";
+\ No newline at end of file
++export * from "./DataGridUtils";
++export * from "./DataGridPowerBI";
++export * from "./PowerBIReportOverlay";
+Index: Core/Communication/index.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Communication/index.ts b/Core/Communication/index.ts
+--- a/Core/Communication/index.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Core/Communication/index.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -8,3 +8,6 @@
+ export * from "../Data/FDC3/FDC3Bridge";
+ export * from "../Data/FDC3/FDC3Types";
+ export * from "../Data/FDC3/IFDC3EventNames";
++export * from "../Data/PowerBI/PowerBIBridge";
++export * from "../Data/PowerBI/PowerBITypes";
++export * from "../Data/PowerBI/IPowerBIEventNames";
+Index: Core/Data/ConnectionManager.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Data/ConnectionManager.ts b/Core/Data/ConnectionManager.ts
+--- a/Core/Data/ConnectionManager.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Core/Data/ConnectionManager.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -6,7 +6,7 @@
+ import { IApiDefinition } from "./IApiDefinition";
+ import { IApiItem } from "./IApiItem";
+ import { SignalRHub } from "./SignalRHub";
+-import { FDC3Bridge } from 'Core/Communication';
++import { FDC3Bridge, PowerBIBridge } from 'Core/Communication';
+ 
+ export type ConnectionManagerStatus = "Initializing" | "Initialized" | "NotInitialized" | "FailedToInitialize";
+ export interface IConnectionManagerEventNames {
+@@ -37,6 +37,7 @@
+     private apiRootStructurePath: string = "api/ApiStructure/GetServicesAndApiDescription";
+     private apiNeoPrefix: string;
+     private fdc3: FDC3Bridge = null;
++    private powerBI: PowerBIBridge = null;
+ 
+     public InitializedModules: Record<string, boolean>;
+     public RegisteredServices: string[];
+@@ -58,6 +59,7 @@
+ 
+     public get ServiceUrlOverrides(): { [serviceName: string]: string } { return this.serviceUrlOverrides; };
+     public get FDC3(): FDC3Bridge { if (!this.fdc3) { this.fdc3 = new FDC3Bridge(); } return this.fdc3;}
++    public get PowerBI(): PowerBIBridge { if (!this.powerBI) { this.powerBI = new PowerBIBridge(); } return this.powerBI; }
+ 
+     public CommunicationName: string;
+     public SignalRHubs: { [name: string]: SignalRHub } = {};
+Index: Core/Data/DataFacade.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Data/DataFacade.ts b/Core/Data/DataFacade.ts
+--- a/Core/Data/DataFacade.ts	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/Core/Data/DataFacade.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -1,5 +1,5 @@
+ import { Application } from "Core/Application";
+-import { Communication, FDC3Bridge, ISubscription } from "Core/Communication";
++import { Communication, FDC3Bridge, PowerBIBridge, ISubscription } from "Core/Communication";
+ import { ResponseError, SignalRHub, IRequestConfiguration, IAddress, RequestType, DataObject } from "Core/Data";
+ import { SecurityMode } from 'Core/Security';
+ 
+@@ -23,6 +23,7 @@
+     public get EventNames(): IDataFacadeEventNames { return this.eventNames; }
+     public get SignalRHubs(): { [name: string]: SignalRHub } { return Application.Instance.ConnectionManager.SignalRHubs; };
+     public get FDC3(): FDC3Bridge { return Application.Instance.ConnectionManager.FDC3; };
++    public get PowerBI(): PowerBIBridge { return Application.Instance.ConnectionManager.PowerBI; };
+ 
+     constructor() {
+         super();
+Index: Core/Data/PowerBI/IPowerBIEventNames.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Data/PowerBI/IPowerBIEventNames.ts b/Core/Data/PowerBI/IPowerBIEventNames.ts
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Core/Data/PowerBI/IPowerBIEventNames.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,4 @@
++export interface IPowerBIEventNames {
++  ReportStateChange: string;
++  DataSelected: string;
++}
+Index: Core/Data/PowerBI/PowerBIBridge.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Data/PowerBI/PowerBIBridge.ts b/Core/Data/PowerBI/PowerBIBridge.ts
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Core/Data/PowerBI/PowerBIBridge.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,177 @@
++import type { Embed, service as PowerBIService, models as PowerBIModels } from "powerbi-client";
++import { Application } from "Core/Application";
++import { Communication, ISubscription } from "Core/Communication";
++import {
++  IPowerBIQuickReportRequest,
++  IPowerBIReportEvent,
++  PowerBIReportState,
++} from "Core/Data/PowerBI/PowerBITypes";
++import { IPowerBIEventNames } from "Core/Data/PowerBI/IPowerBIEventNames";
++
++export class PowerBIBridge extends Communication {
++  /**
++   * Name of the service in application Scopes settings, e.g.
++   * Scopes: { "PowerBI": ["https://analysis.windows.net/powerbi/api/.default"] }
++   * The app registration needs delegated Power BI Service permissions:
++   * Content.Create, Dataset.ReadWrite.All, Report.Read.All, Workspace.Read.All
++   */
++  public static readonly ServiceName = "PowerBI";
++  public static readonly QuickCreateEmbedUrl = "https://app.powerbi.com/quickcreate";
++  /** Quick create request size limit */
++  public static readonly MaxRequestSize = 16 * 1024 * 1024;
++
++  private static readonly TokenTimeout = 120000;
++
++  private eventNames: IPowerBIEventNames;
++  private powerBIService: PowerBIService.Service | null = null;
++
++  public get EventNames(): IPowerBIEventNames {
++    return this.eventNames;
++  }
++
++  /**
++   * Indicates whether Power BI scopes are configured for the application
++   */
++  public get IsEnabled(): boolean {
++    const scopes = Application.Instance.Properties?.Scopes?.[PowerBIBridge.ServiceName];
++    return Boolean(scopes && scopes.length);
++  }
++
++  constructor() {
++    super();
++    this.CommunicationName = "PowerBIBridge";
++    this.eventNames = {
++      ReportStateChange: this.CommunicationName + "_ReportStateChange",
++      DataSelected: this.CommunicationName + "_DataSelected",
++    };
++  }
++
++  public Subscribe(eventName: string, subscriberId: string, callback: (...parameters: any[]) => void): ISubscription {
++    const subscription = super.Subscribe(eventName, subscriberId, callback);
++    subscription.CommunicationName = this.CommunicationName;
++    return subscription;
++  }
++
++  /**
++   * Create a semantic model from the provided data and embed an auto-generated report into the container
++   */
++  public async QuickCreateReport(
++    container: HTMLElement,
++    request: IPowerBIQuickReportRequest
++  ): Promise<Embed> {
++    if (!this.IsEnabled) {
++      throw new Error(`Power BI: '${PowerBIBridge.ServiceName}' scopes are not configured`);
++    }
++
++    try {
++      const { models } = await import("powerbi-client");
++      const powerBIService = await this.GetService();
++      const accessToken = await this.GetAccessToken();
++      const locale = request.locale || "en_US";
++
++      const config: PowerBIModels.IQuickCreateConfiguration = {
++        type: "quickCreate",
++        tokenType: models.TokenType.Aad,
++        accessToken,
++        embedUrl: PowerBIBridge.QuickCreateEmbedUrl,
++        datasetCreateConfig: {
++          locale,
++          tableSchemaList: [{
++            // Only single table named "Table" is supported by quick create
++            name: "Table",
++            columns: request.columns.map(column => ({
++              name: column.name,
++              dataType: column.dataType as PowerBIModels.DataType,
++            })),
++          }],
++          data: [{ name: "Table", rows: request.rows }],
++        },
++        reportCreationMode: "QuickExplore" as PowerBIModels.ReportCreationMode,
++        settings: {
++          localeSettings: { language: locale },
++        },
++      };
++
++      const requestSize = new Blob([JSON.stringify(config.datasetCreateConfig)]).size;
++      if (requestSize > PowerBIBridge.MaxRequestSize) {
++        throw new Error(`Power BI: data size (${requestSize} bytes) exceeds quick create limit of 16MB`);
++      }
++
++      powerBIService.reset(container);
++      this.SetReportState("creating", null);
++
++      const report = powerBIService.quickCreate(container, config);
++      report.on("loaded", () => this.SetReportState("loaded", report));
++      report.on("rendered", () => this.SetReportState("rendered", report));
++      report.on("error", (event: any) => {
++        this.ConsoleMessage(`Power BI: report error ${JSON.stringify(event?.detail)}`, true);
++        this.SetReportState("error", report, event?.detail);
++      });
++      report.on("dataSelected", (event: any) => {
++        const reportEvent: IPowerBIReportEvent = { report, detail: event?.detail };
++        this.NotifyAll(this.eventNames.DataSelected, reportEvent);
++      });
++
++      this.ConsoleMessage(
++        `Power BI: Quick create report '${request.modelName}' with ${request.rows.length} rows`
++      );
++      return report;
++    } catch (error) {
++      this.ConsoleError(error as Error);
++      this.ConsoleMessage("Power BI: Failed to create report", true);
++      this.SetReportState("error", null, error);
++      throw error;
++    }
++  }
++
++  /**
++   * Remove embedded report from the container
++   */
++  public ResetContainer(container: HTMLElement): void {
++    if (this.powerBIService && container) {
++      this.powerBIService.reset(container);
++    }
++  }
++
++  public Dispose(): void {
++    this.powerBIService = null;
++    this.ConsoleMessage("Power BI: Disposed");
++  }
++
++  private async GetService(): Promise<PowerBIService.Service> {
++    if (!this.powerBIService) {
++      const { service, factories } = await import("powerbi-client");
++      this.powerBIService = new service.Service(
++        factories.hpmFactory,
++        factories.wpmpFactory,
++        factories.routerFactory
++      );
++    }
++    return this.powerBIService;
++  }
++
++  /**
++   * Power BI quick create supports Microsoft Entra (AAD) tokens only
++   */
++  private GetAccessToken(): Promise<string> {
++    return new Promise<string>((resolve, reject) => {
++      // AppendAuthorization doesn't call back when token can't be acquired
++      const timeout = setTimeout(
++        () => reject(new Error("Power BI: Failed to acquire access token")),
++        PowerBIBridge.TokenTimeout
++      );
++      Application.Instance.Tools.GetApplicationSecurity("Azure").AppendAuthorization(
++        PowerBIBridge.ServiceName,
++        token => {
++          clearTimeout(timeout);
++          token ? resolve(token) : reject(new Error("Power BI: Failed to acquire access token"));
++        }
++      );
++    });
++  }
++
++  private SetReportState(state: PowerBIReportState, report: Embed | null, detail?: any): void {
++    const reportEvent: IPowerBIReportEvent = { report, detail };
++    this.NotifyAll(this.eventNames.ReportStateChange, state, reportEvent);
++  }
++}
+Index: Core/Data/PowerBI/PowerBITypes.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Data/PowerBI/PowerBITypes.ts b/Core/Data/PowerBI/PowerBITypes.ts
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Core/Data/PowerBI/PowerBITypes.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,45 @@
++import type { Embed } from "powerbi-client";
++
++/**
++ * Column data types supported by Power BI quick create (subset of M language types).
++ * Mirrors `models.DataType` from powerbi-models, which is a const enum and can't be referenced at runtime.
++ */
++export type PowerBIDataType =
++  | "Number"
++  | "Currency"
++  | "Int32"
++  | "Percentage"
++  | "DateTime"
++  | "DateTimeZone"
++  | "Date"
++  | "Time"
++  | "Duration"
++  | "Text"
++  | "Logical"
++  | "Binary";
++
++/**
++ * Power BI Report States
++ */
++export type PowerBIReportState = "creating" | "loaded" | "rendered" | "error";
++
++export interface IPowerBIColumn {
++  name: string;
++  dataType: PowerBIDataType;
++}
++
++/**
++ * Data used to generate a quick report.
++ * Values must be formatted following the M language value specification (parsed using `locale`).
++ */
++export interface IPowerBIQuickReportRequest {
++  modelName: string;
++  columns: IPowerBIColumn[];
++  rows: string[][];
++  locale?: string;
++}
++
++export interface IPowerBIReportEvent {
++  report: Embed;
++  detail?: any;
++}
+Index: Core/Data/PowerBI/index.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Core/Data/PowerBI/index.ts b/Core/Data/PowerBI/index.ts
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Core/Data/PowerBI/index.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,3 @@
++export * from "./PowerBIBridge";
++export * from "./IPowerBIEventNames";
++export * from "./PowerBITypes";
+Index: Tests/CompositeComponents/Basic/DataGridPowerBI.test.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Tests/CompositeComponents/Basic/DataGridPowerBI.test.tsx b/Tests/CompositeComponents/Basic/DataGridPowerBI.test.tsx
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Tests/CompositeComponents/Basic/DataGridPowerBI.test.tsx	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,156 @@
++import { vi } from 'vitest';
++import type { GridReadyEvent } from 'ag-grid-community';
++
++const { mockRequest, mockAlert, mockIsEnabled } = vi.hoisted(() => ({
++    mockRequest: vi.fn(),
++    mockAlert: vi.fn(),
++    mockIsEnabled: { value: true }
++}));
++
++vi.mock('Core/Application', async (importOriginal) => {
++    const actual = await importOriginal<typeof import('Core/Application')>();
++    return {
++        ...actual,
++        Application: {
++            Instance: {
++                DataFacade: {
++                    Request: mockRequest,
++                    get PowerBI() { return { IsEnabled: mockIsEnabled.value }; }
++                },
++                Communication: { Alert: mockAlert }
++            }
++        }
++    };
++});
++
++import { DataGrid, DataGridPowerBI, DataGridUtils } from 'Components/Basic/DataGrid';
++
++const createColumn = (colId: string, headerName: string, cellDataType?: string) => ({
++    getColId: () => colId,
++    getColDef: () => ({ headerName, cellDataType }),
++    headerName
++});
++
++const createApiStub = (columns: any[], nodes: any[]) => ({
++    getAllDisplayedColumns: () => columns,
++    forEachNodeAfterFilterAndSort: (callback: (node: any) => void) => nodes.forEach(callback),
++    getCellValue: ({ rowNode, colKey, useFormatter }: any) =>
++        useFormatter ? `formatted ${colKey.getColId()}` : rowNode.data[colKey.getColId()],
++    getDisplayNameForColumn: (column: any) => column.headerName
++});
++
++describe('DataGridPowerBI', () => {
++
++    it('should map displayed columns and filtered leaf rows to quick report request', () => {
++        // given
++        const columns = [
++            createColumn('ag-Grid-AutoColumn', 'Group'),
++            createColumn('name', 'Name'),
++            createColumn('value', 'Value'),
++            createColumn('active', 'Active', 'boolean'),
++            createColumn('date', 'Date'),
++            createColumn('details', 'Details')
++        ];
++        const nodes = [
++            { group: true, data: {} },
++            { data: { name: 'A', value: 1.5, active: true, date: new Date('2026-01-02T00:00:00Z'), details: { id: 1 } } },
++            { data: { name: 'B', value: null, active: false, date: null, details: null } }
++        ];
++
++        // when
++        const request = DataGridPowerBI.createQuickReportRequest(createApiStub(columns, nodes) as any, 'Positions');
++
++        // then
++        expect(request.modelName).toBe('Positions');
++        expect(request.columns).toEqual([
++            { name: 'Name', dataType: 'Text' },
++            { name: 'Value', dataType: 'Number' },
++            { name: 'Active', dataType: 'Logical' },
++            { name: 'Date', dataType: 'DateTime' },
++            { name: 'Details', dataType: 'Text' }
++        ]);
++        expect(request.rows).toEqual([
++            ['A', '1.5', 'true', '2026-01-02T00:00:00.000Z', 'formatted details'],
++            ['B', '', 'false', '', '']
++        ]);
++    });
++
++    it('should make duplicated column names unique', () => {
++        // given
++        const columns = [createColumn('a', 'Price'), createColumn('b', 'Price')];
++
++        // when
++        const request = DataGridPowerBI.createQuickReportRequest(createApiStub(columns, []) as any, 'Prices');
++
++        // then
++        expect(request.columns.map(column => column.name)).toEqual(['Price', 'Price (2)']);
++    });
++
++    it('should add Power BI item to export menu only when power bi export is provided', () => {
++        // given
++        const powerBIExport = vi.fn();
++
++        // when
++        const withPowerBI = DataGridUtils.setDefaultMenuItems([], true, vi.fn(), vi.fn(), powerBIExport);
++        const withoutPowerBI = DataGridUtils.setDefaultMenuItems([], true, vi.fn(), vi.fn());
++
++        // then
++        const getExportNames = (items: any[]) => items.find(item => item.name === 'Export').subMenu.map((item: any) => item.name);
++        expect(getExportNames(withPowerBI)).toEqual(['CSV Export', 'Excel Export', 'Power BI']);
++        expect(getExportNames(withoutPowerBI)).toEqual(['CSV Export', 'Excel Export']);
++    });
++});
++
++describe('DataGrid Power BI export', () => {
++
++    const auditProperties = { Library: 'pet', Module: 'Portfolio', Component: 'Summary', Details: { id: 1 } };
++
++    const createGrid = (props: any = {}) => {
++        const grid = new DataGrid({ enableExport: true, exportAuditProperties: auditProperties, enablePowerBIExport: true, ...props } as any);
++        grid.setState = vi.fn();
++        const api = { ...createApiStub([createColumn('name', 'Name')], [{ data: { name: 'A' } }]) };
++        (grid as any).OnGridReady({ api } as unknown as GridReadyEvent);
++        return grid;
++    };
++
++    beforeEach(() => {
++        vi.clearAllMocks();
++        mockIsEnabled.value = true;
++        mockRequest.mockImplementation((_addressName, _parameters, onSuccess) => onSuccess({ IsSuccessful: true }));
++    });
++
++    it('should audit export and open report with grid data', () => {
++        // given
++        const grid = createGrid();
++
++        // when
++        (grid as any).ExportGridDataToPowerBI();
++
++        // then
++        expect(mockRequest).toHaveBeenCalledTimes(1);
++        expect(grid.setState).toHaveBeenCalledWith({
++            powerBIRequest: { modelName: 'Summary', columns: [{ name: 'Name', dataType: 'Text' }], rows: [['A']] }
++        });
++    });
++
++    it('should not open report when audit fails', () => {
++        // given
++        const grid = createGrid();
++        mockRequest.mockImplementation((_addressName, _parameters, onSuccess) => onSuccess({ IsSuccessful: false }));
++
++        // when
++        (grid as any).ExportGridDataToPowerBI();
++
++        // then
++        expect(grid.setState).not.toHaveBeenCalled();
++        expect(mockAlert).toHaveBeenCalledTimes(1);
++    });
++
++    it('should enable power bi export only when requested and configured', () => {
++        expect((createGrid() as any).IsPowerBIExportEnabled()).toBe(true);
++        expect((createGrid({ enablePowerBIExport: false }) as any).IsPowerBIExportEnabled()).toBe(false);
++
++        mockIsEnabled.value = false;
++        expect((createGrid() as any).IsPowerBIExportEnabled()).toBe(false);
++    });
++});
+Index: Tests/Core/Data/PowerBIBridge.test.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/Tests/Core/Data/PowerBIBridge.test.ts b/Tests/Core/Data/PowerBIBridge.test.ts
+new file mode 100644
+--- /dev/null	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
++++ b/Tests/Core/Data/PowerBIBridge.test.ts	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -0,0 +1,114 @@
++import { vi } from 'vitest';
++
++const { mockAppendAuthorization, mockProperties, mockReport, mockService } = vi.hoisted(() => {
++    const mockReport = { on: vi.fn() };
++    return {
++        mockAppendAuthorization: vi.fn(),
++        mockProperties: { Scopes: {} as Record<string, string[]> },
++        mockReport,
++        mockService: { quickCreate: vi.fn(() => mockReport), reset: vi.fn() }
++    };
++});
++
++vi.mock('Core/Application', async (importOriginal) => {
++    const actual = await importOriginal<typeof import('Core/Application')>();
++    return {
++        ...actual,
++        Application: {
++            Instance: {
++                Properties: mockProperties,
++                Tools: { GetApplicationSecurity: () => ({ AppendAuthorization: mockAppendAuthorization }) }
++            }
++        }
++    };
++});
++
++vi.mock('powerbi-client', () => ({
++    models: { TokenType: { Aad: 0, Embed: 1 } },
++    factories: {},
++    service: { Service: vi.fn(() => mockService) }
++}));
++
++import { PowerBIBridge } from 'Core/Data/PowerBI';
++
++describe('PowerBIBridge', () => {
++
++    const request = {
++        modelName: 'Positions',
++        columns: [{ name: 'Name', dataType: 'Text' as const }],
++        rows: [['A']]
++    };
++
++    beforeEach(() => {
++        vi.clearAllMocks();
++        mockProperties.Scopes = { PowerBI: ['https://analysis.windows.net/powerbi/api/.default'] };
++        mockAppendAuthorization.mockImplementation((_serviceName, callback) => callback('token'));
++    });
++
++    it('should be enabled only when power bi scopes are configured', () => {
++        expect(new PowerBIBridge().IsEnabled).toBe(true);
++
++        mockProperties.Scopes = {};
++        expect(new PowerBIBridge().IsEnabled).toBe(false);
++    });
++
++    it('should quick create report with aad token and grid data', async () => {
++        // given
++        const bridge = new PowerBIBridge();
++        const container = document.createElement('div');
++
++        // when
++        const report = await bridge.QuickCreateReport(container, request);
++
++        // then
++        expect(report).toBe(mockReport);
++        expect(mockAppendAuthorization).toHaveBeenCalledWith('PowerBI', expect.any(Function));
++        expect(mockService.quickCreate).toHaveBeenCalledWith(container, expect.objectContaining({
++            type: 'quickCreate',
++            tokenType: 0,
++            accessToken: 'token',
++            embedUrl: 'https://app.powerbi.com/quickcreate',
++            reportCreationMode: 'QuickExplore',
++            datasetCreateConfig: {
++                locale: 'en_US',
++                tableSchemaList: [{ name: 'Table', columns: [{ name: 'Name', dataType: 'Text' }] }],
++                data: [{ name: 'Table', rows: [['A']] }]
++            }
++        }));
++    });
++
++    it('should notify report state changes', async () => {
++        // given
++        const bridge = new PowerBIBridge();
++        const states: string[] = [];
++        bridge.Subscribe(bridge.EventNames.ReportStateChange, 'test', (state: string) => states.push(state));
++
++        // when
++        await bridge.QuickCreateReport(document.createElement('div'), request);
++        const loadedHandler = mockReport.on.mock.calls.find(([eventName]) => eventName === 'loaded')[1];
++        loadedHandler();
++
++        // then
++        expect(states).toEqual(['creating', 'loaded']);
++    });
++
++    it('should reject when scopes are not configured', async () => {
++        // given
++        mockProperties.Scopes = {};
++        const bridge = new PowerBIBridge();
++
++        // when / then
++        await expect(bridge.QuickCreateReport(document.createElement('div'), request)).rejects.toThrow('scopes are not configured');
++        expect(mockService.quickCreate).not.toHaveBeenCalled();
++    });
++
++    it('should reject when token can not be acquired', async () => {
++        // given
++        mockAppendAuthorization.mockImplementation((_serviceName, callback) => callback(null));
++        const bridge = new PowerBIBridge();
++
++        // when / then
++        await expect(bridge.QuickCreateReport(document.createElement('div'), request)).rejects.toThrow('access token');
++        expect(mockService.quickCreate).not.toHaveBeenCalled();
++    });
++});
+Index: package.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/package.json b/package.json
+--- a/package.json	(revision db9d9e8f04bee4ba3f93296f8320fe6f46098ec8)
++++ b/package.json	(revision 716e726b674c48bdb2b9f488de665e863d8a6510)
+@@ -101,6 +101,7 @@
+     "neo-core-css": "^4.2.3",
+     "numbro": "^2.3.6",
+     "path": "^0.12.7",
++    "powerbi-client": "2.24.1",
+     "pretty-bytes": "7.0.0",
+     "prop-types": "^15.8.1",
+     "react": "^18.2.0",
